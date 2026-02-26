@@ -1,0 +1,70 @@
+# ============================================================
+#  MainFreem — docker-compose.yml
+#
+#  Pour les exercices COBOL pur (1-9, 13-15) :
+#    docker build -t mainfreem-cobol .
+#    docker run -it --rm mainfreem-cobol
+#
+#  Pour les exercices SQL (10-12), lancer avec :
+#    docker-compose up -d
+#    docker-compose exec cobol bash
+# ============================================================
+
+version: "3.9"
+
+services:
+
+  # ── Environnement COBOL principal ──────────────────────────
+  cobol:
+    build: .
+    image: mainfreem-cobol:latest
+    container_name: mainfreem-cobol
+    stdin_open: true
+    tty: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: coboldb
+      PGUSER: cobol
+      PGPASSWORD: cobol123
+    volumes:
+      # Monte votre dossier local pour persister vos fichiers COBOL
+      - ./workspace:/workspace/my-programs
+      - ./exercises:/workspace/exercises
+    networks:
+      - mainfreem-net
+
+  # ── Base de données PostgreSQL ─────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: mainfreem-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: coboldb
+      POSTGRES_USER: cobol
+      POSTGRES_PASSWORD: cobol123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Script d'initialisation des tables pour les exercices
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      # Expose PostgreSQL pour accès avec un client SQL externe (optionnel)
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cobol -d coboldb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - mainfreem-net
+
+volumes:
+  postgres_data:
+    name: mainfreem-postgres-data
+
+networks:
+  mainfreem-net:
+    name: mainfreem-network
