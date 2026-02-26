@@ -1,0 +1,111 @@
+      *===============================================================
+      * Exercice 11 - Curseur et traitement de masse
+      * Niveau : Avance
+      * Prerequis : docker-compose up -d
+      * Compiler : compile.sh ex11_curseur.pco -run
+      *===============================================================
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. EX11-CURSEUR.
+
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT FIC-BONUS ASSIGN TO 'FIC-BONUS.txt'
+               ORGANIZATION IS SEQUENTIAL.
+
+       DATA DIVISION.
+       FILE SECTION.
+       FD  FIC-BONUS LABEL RECORDS ARE STANDARD.
+       01  ENR-BONUS          PIC X(80).
+
+       WORKING-STORAGE SECTION.
+           EXEC SQL INCLUDE SQLCA END-EXEC.
+
+       01 WS-MATRICULE        PIC X(6).
+       01 WS-NOM              PIC X(20).
+       01 WS-PRENOM           PIC X(15).
+       01 WS-SALAIRE          PIC S9(8)V99.
+       01 WS-BONUS            PIC S9(8)V99.
+       01 WS-COMPTEUR         PIC 9(4)  VALUE 0.
+       01 WS-TOTAL-SALAIRES   PIC S9(12)V99 VALUE 0.
+       01 WS-TOTAL-BONUS      PIC S9(12)V99 VALUE 0.
+
+       01 WS-LIGNE-RAPPORT.
+           05 LRP-MAT         PIC X(6).
+           05 FILLER          PIC X VALUE ' '.
+           05 LRP-NOM         PIC X(25).
+           05 FILLER          PIC X VALUE ' '.
+           05 LRP-SALAIRE     PIC ZZ,ZZ9.99.
+           05 FILLER          PIC X(4) VALUE ' -> '.
+           05 LRP-BONUS       PIC ZZ,ZZ9.99.
+           05 FILLER          PIC X(4) VALUE ' EUR'.
+
+           EXEC SQL
+               DECLARE C-EMPLOYES CURSOR FOR
+               SELECT MATRICULE, NOM, PRENOM, SALAIRE
+               FROM   EMPLOYES
+               WHERE  STATUT = 'A'
+               ORDER  BY SALAIRE DESC
+           END-EXEC.
+
+       PROCEDURE DIVISION.
+           EXEC SQL
+               CONNECT TO 'coboldb' USER 'cobol' USING 'cobol123'
+           END-EXEC.
+           IF SQLCODE NOT = 0
+               DISPLAY 'Erreur connexion : ' SQLCODE
+               STOP RUN
+           END-IF.
+
+           OPEN OUTPUT FIC-BONUS.
+
+           EXEC SQL OPEN C-EMPLOYES END-EXEC.
+
+           DISPLAY '================================'.
+           DISPLAY '  Calcul des bonus (10%)'.
+           DISPLAY '================================'.
+
+           PERFORM UNTIL SQLCODE = 100
+               EXEC SQL
+                   FETCH C-EMPLOYES
+                   INTO  :WS-MATRICULE, :WS-NOM,
+                         :WS-PRENOM, :WS-SALAIRE
+               END-EXEC
+
+               IF SQLCODE = 0
+                   PERFORM TRAITEMENT-EMPLOYE
+               END-IF
+           END-PERFORM.
+
+           EXEC SQL CLOSE C-EMPLOYES END-EXEC.
+
+           CLOSE FIC-BONUS.
+
+           DISPLAY '--------------------------------'.
+           DISPLAY 'Employes traites : ' WS-COMPTEUR.
+           DISPLAY 'Total salaires   : ' WS-TOTAL-SALAIRES.
+           DISPLAY 'Total bonus      : ' WS-TOTAL-BONUS.
+           DISPLAY 'Rapport          : FIC-BONUS.txt'.
+           DISPLAY '================================'.
+           STOP RUN.
+
+      *---------------------------------------------------------------
+       TRAITEMENT-EMPLOYE.
+           ADD 1 TO WS-COMPTEUR.
+           COMPUTE WS-BONUS = WS-SALAIRE * 0.10.
+           ADD WS-SALAIRE TO WS-TOTAL-SALAIRES.
+           ADD WS-BONUS   TO WS-TOTAL-BONUS.
+
+           MOVE WS-MATRICULE TO LRP-MAT.
+           STRING WS-PRENOM DELIMITED SPACE ' ' DELIMITED SIZE
+                  WS-NOM    DELIMITED SPACE
+                  INTO LRP-NOM.
+           MOVE WS-SALAIRE TO LRP-SALAIRE.
+           MOVE WS-BONUS   TO LRP-BONUS.
+
+           DISPLAY WS-MATRICULE ' ' WS-NOM
+                   '  Salaire: ' WS-SALAIRE
+                   '  Bonus: ' WS-BONUS.
+
+           MOVE WS-LIGNE-RAPPORT TO ENR-BONUS.
+           WRITE ENR-BONUS.

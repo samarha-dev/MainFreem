@@ -1,0 +1,86 @@
+      *===============================================================
+      * Exercice 10 - SELECT simple en COBOL/SQL
+      * Niveau : Avance
+      * Prerequis : docker-compose up -d
+      * Precompiler : ocesql ex10_select.pco ex10_select.cob
+      * Compiler    : cobc -x ex10_select.cob -locesql -lpq -o ex10
+      * Ou simplement : compile.sh ex10_select.pco -run
+      *===============================================================
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. EX10-SELECT.
+
+       ENVIRONMENT DIVISION.
+
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+
+           EXEC SQL INCLUDE SQLCA END-EXEC.
+
+       01 WS-MATRICULE    PIC X(6)  VALUE 'EMP001'.
+       01 WS-NOM          PIC X(20) VALUE SPACES.
+       01 WS-PRENOM       PIC X(15) VALUE SPACES.
+       01 WS-SALAIRE      PIC S9(8)V99 VALUE ZEROS.
+       01 WS-SALAIRE-AFF  PIC ZZ,ZZ9.99.
+
+       PROCEDURE DIVISION.
+           PERFORM CONNEXION-DB.
+           PERFORM RECHERCHE-EMPLOYE.
+           PERFORM LISTER-EMPLOYES.
+           STOP RUN.
+
+      *---------------------------------------------------------------
+       CONNEXION-DB.
+           EXEC SQL
+               CONNECT TO 'coboldb' USER 'cobol' USING 'cobol123'
+           END-EXEC.
+           IF SQLCODE NOT = 0
+               DISPLAY 'Erreur connexion SQLCODE : ' SQLCODE
+               STOP RUN
+           END-IF.
+           DISPLAY '================================'.
+           DISPLAY '  Connecte a la base coboldb'.
+           DISPLAY '================================'.
+
+      *---------------------------------------------------------------
+       RECHERCHE-EMPLOYE.
+           DISPLAY ' '.
+           DISPLAY '-- Recherche employe : ' WS-MATRICULE.
+
+           EXEC SQL
+               SELECT NOM, PRENOM, SALAIRE
+               INTO   :WS-NOM, :WS-PRENOM, :WS-SALAIRE
+               FROM   EMPLOYES
+               WHERE  MATRICULE = :WS-MATRICULE
+           END-EXEC.
+
+           EVALUATE SQLCODE
+               WHEN 0
+                   MOVE WS-SALAIRE TO WS-SALAIRE-AFF
+                   DISPLAY 'Employe trouve :'
+                   DISPLAY '  Nom     : ' WS-PRENOM ' ' WS-NOM
+                   DISPLAY '  Salaire : ' WS-SALAIRE-AFF ' EUR'
+               WHEN 100
+                   DISPLAY 'Employe ' WS-MATRICULE ' non trouve.'
+               WHEN OTHER
+                   DISPLAY 'Erreur SQL : ' SQLCODE
+           END-EVALUATE.
+
+      *---------------------------------------------------------------
+       LISTER-EMPLOYES.
+           DISPLAY ' '.
+           DISPLAY '-- Liste de tous les employes :'.
+           DISPLAY '--------------------------------'.
+
+           EXEC SQL
+               SELECT COUNT(*) INTO :WS-SALAIRE
+               FROM EMPLOYES
+           END-EXEC.
+           DISPLAY 'Nombre total d''employes : ' WS-SALAIRE.
+
+           EXEC SQL
+               SELECT SUM(SALAIRE) INTO :WS-SALAIRE
+               FROM EMPLOYES
+               WHERE STATUT = 'A'
+           END-EXEC.
+           MOVE WS-SALAIRE TO WS-SALAIRE-AFF.
+           DISPLAY 'Masse salariale totale  : ' WS-SALAIRE-AFF ' EUR'.

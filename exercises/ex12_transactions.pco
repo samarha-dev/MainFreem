@@ -1,0 +1,158 @@
+      *===============================================================
+      * Exercice 12 - UPDATE, INSERT, DELETE et transactions
+      * Niveau : Avance
+      * Prerequis : docker-compose up -d
+      * Compiler : compile.sh ex12_transactions.pco -run
+      *===============================================================
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. EX12-TRANSACTIONS.
+
+       ENVIRONMENT DIVISION.
+
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+           EXEC SQL INCLUDE SQLCA END-EXEC.
+
+       01 WS-MATRICULE     PIC X(6).
+       01 WS-NOM           PIC X(20).
+       01 WS-PRENOM        PIC X(15).
+       01 WS-SALAIRE       PIC S9(8)V99.
+       01 WS-CODE-SVC      PIC X(4).
+
+       01 WS-NB-INSERTS    PIC 9(4) VALUE 0.
+       01 WS-NB-UPDATES    PIC 9(4) VALUE 0.
+       01 WS-NB-DELETES    PIC 9(4) VALUE 0.
+       01 WS-NB-ERREURS    PIC 9(4) VALUE 0.
+
+       PROCEDURE DIVISION.
+           EXEC SQL
+               CONNECT TO 'coboldb' USER 'cobol' USING 'cobol123'
+           END-EXEC.
+           IF SQLCODE NOT = 0
+               DISPLAY 'Erreur connexion : ' SQLCODE
+               STOP RUN
+           END-IF.
+
+           DISPLAY '================================'.
+           DISPLAY '  Exercice 12 : Transactions SQL'.
+           DISPLAY '================================'.
+
+           PERFORM DEMO-INSERT.
+           PERFORM DEMO-UPDATE.
+           PERFORM DEMO-SELECT-VERIFICATION.
+           PERFORM DEMO-DELETE.
+           PERFORM DEMO-ROLLBACK.
+
+           EXEC SQL COMMIT END-EXEC.
+
+           DISPLAY '================================'.
+           DISPLAY 'Inserts  : ' WS-NB-INSERTS.
+           DISPLAY 'Updates  : ' WS-NB-UPDATES.
+           DISPLAY 'Deletes  : ' WS-NB-DELETES.
+           DISPLAY 'Erreurs  : ' WS-NB-ERREURS.
+           DISPLAY '================================'.
+           STOP RUN.
+
+      *---------------------------------------------------------------
+       DEMO-INSERT.
+           DISPLAY ' '.
+           DISPLAY '-- INSERT : ajout EMP011'.
+
+           MOVE 'EMP011'  TO WS-MATRICULE.
+           MOVE 'LEROY'   TO WS-NOM.
+           MOVE 'Nicolas' TO WS-PRENOM.
+           MOVE 'INFO'    TO WS-CODE-SVC.
+           MOVE 3200.00   TO WS-SALAIRE.
+
+           EXEC SQL
+               INSERT INTO EMPLOYES
+                   (MATRICULE, NOM, PRENOM, CODE_SVC, SALAIRE, STATUT)
+               VALUES
+                   (:WS-MATRICULE, :WS-NOM, :WS-PRENOM,
+                    :WS-CODE-SVC, :WS-SALAIRE, 'A')
+           END-EXEC.
+
+           IF SQLCODE = 0
+               ADD 1 TO WS-NB-INSERTS
+               DISPLAY '  INSERT OK : ' WS-MATRICULE ' ' WS-NOM
+           ELSE
+               ADD 1 TO WS-NB-ERREURS
+               DISPLAY '  ERREUR INSERT SQLCODE : ' SQLCODE
+           END-IF.
+
+      *---------------------------------------------------------------
+       DEMO-UPDATE.
+           DISPLAY ' '.
+           DISPLAY '-- UPDATE : augmentation de 10% salaire < 2000'.
+
+           EXEC SQL
+               UPDATE EMPLOYES
+               SET    SALAIRE = SALAIRE * 1.10
+               WHERE  SALAIRE < 2000
+               AND    STATUT = 'A'
+           END-EXEC.
+
+           IF SQLCODE = 0
+               ADD 1 TO WS-NB-UPDATES
+               DISPLAY '  UPDATE OK - Lignes affectees : ' SQLERRD(3)
+           ELSE
+               ADD 1 TO WS-NB-ERREURS
+               DISPLAY '  ERREUR UPDATE SQLCODE : ' SQLCODE
+           END-IF.
+
+      *---------------------------------------------------------------
+       DEMO-SELECT-VERIFICATION.
+           DISPLAY ' '.
+           DISPLAY '-- Verification apres UPDATE :'.
+
+           EXEC SQL
+               SELECT COUNT(*), MIN(SALAIRE), MAX(SALAIRE)
+               INTO   :WS-NB-INSERTS, :WS-SALAIRE, :WS-NOM
+               FROM   EMPLOYES
+               WHERE  STATUT = 'A'
+           END-EXEC.
+
+           DISPLAY '  Employes actifs : ' WS-NB-INSERTS.
+           MOVE WS-NB-INSERTS TO WS-NB-INSERTS.
+
+      *---------------------------------------------------------------
+       DEMO-DELETE.
+           DISPLAY ' '.
+           DISPLAY '-- DELETE : suppression EMP011 (test)'.
+
+           MOVE 'EMP011' TO WS-MATRICULE.
+
+           EXEC SQL
+               DELETE FROM EMPLOYES
+               WHERE MATRICULE = :WS-MATRICULE
+           END-EXEC.
+
+           IF SQLCODE = 0
+               ADD 1 TO WS-NB-DELETES
+               DISPLAY '  DELETE OK : ' WS-MATRICULE
+           ELSE
+               ADD 1 TO WS-NB-ERREURS
+               DISPLAY '  ERREUR DELETE SQLCODE : ' SQLCODE
+           END-IF.
+
+      *---------------------------------------------------------------
+       DEMO-ROLLBACK.
+           DISPLAY ' '.
+           DISPLAY '-- ROLLBACK demo :'.
+
+           MOVE 'EMP999' TO WS-MATRICULE.
+           MOVE 'TEST'   TO WS-NOM.
+           MOVE 'Rollback' TO WS-PRENOM.
+           MOVE 9999.99  TO WS-SALAIRE.
+
+           EXEC SQL
+               INSERT INTO EMPLOYES
+                   (MATRICULE, NOM, PRENOM, SALAIRE, STATUT)
+               VALUES
+                   (:WS-MATRICULE, :WS-NOM, :WS-PRENOM,
+                    :WS-SALAIRE, 'A')
+           END-EXEC.
+
+           DISPLAY '  Insert EMP999 temporaire...'.
+           EXEC SQL ROLLBACK END-EXEC.
+           DISPLAY '  ROLLBACK effectue - EMP999 annule.'.

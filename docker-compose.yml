@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+
+  cobol:
+    build: .
+    image: mainfreem-cobol:latest
+    container_name: mainfreem-cobol
+    stdin_open: true
+    tty: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: coboldb
+      PGUSER: cobol
+      PGPASSWORD: cobol123
+    volumes:
+      - ./workspace:/workspace/my-programs
+    networks:
+      - mainfreem-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: mainfreem-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: coboldb
+      POSTGRES_USER: cobol
+      POSTGRES_PASSWORD: cobol123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cobol -d coboldb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - mainfreem-net
+
+volumes:
+  postgres_data:
+
+networks:
+  mainfreem-net:

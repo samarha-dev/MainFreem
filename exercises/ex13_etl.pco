@@ -1,0 +1,198 @@
+      *===============================================================
+      * Exercice 13 - Programme ETL complet
+      * Niveau : Expert
+      * Compiler : compile.sh ex13_etl.pco -run
+      *   (ou cobc -x ex13_etl.cobol si sans SQL)
+      *===============================================================
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. EX13-ETL.
+
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT FIC-EMPLOYES ASSIGN TO 'FIC-EMPLOYES.dat'
+               ORGANIZATION IS SEQUENTIAL.
+           SELECT FIC-REJET ASSIGN TO 'FIC-REJET.txt'
+               ORGANIZATION IS SEQUENTIAL.
+
+       DATA DIVISION.
+       FILE SECTION.
+       FD  FIC-EMPLOYES LABEL RECORDS ARE STANDARD.
+       01  ENR-EMPLOYES.
+           05 EMP-MATRICULE   PIC X(6).
+           05 EMP-NOM         PIC X(20).
+           05 EMP-PRENOM      PIC X(15).
+           05 EMP-SALAIRE     PIC 9(6).
+           05 EMP-STATUT      PIC X.
+
+       FD  FIC-REJET LABEL RECORDS ARE STANDARD.
+       01  ENR-REJET          PIC X(80).
+
+       WORKING-STORAGE SECTION.
+           EXEC SQL INCLUDE SQLCA END-EXEC.
+
+      * Référentiel services en mémoire
+       01 WS-TABLE-SERVICES.
+          05 WS-SERVICE OCCURS 10 TIMES INDEXED BY WS-IDX.
+             10 WS-SVC-CODE   PIC X(4).
+             10 WS-SVC-LIB    PIC X(30).
+             10 WS-SVC-BUDGET PIC S9(10)V99.
+
+       01 WS-NB-SERVICES      PIC 9(2) VALUE 0.
+       01 WS-SVC-COURANT      PIC X(4).
+       01 WS-SVC-LIB-COURANT  PIC X(30).
+
+      * Compteurs
+       01 WS-NB-LUS           PIC 9(6) VALUE 0.
+       01 WS-NB-INSERES       PIC 9(6) VALUE 0.
+       01 WS-NB-REJETES       PIC 9(6) VALUE 0.
+       01 WS-CODE-REJET       PIC X(3).
+       01 WS-STATUT-VAL       PIC X VALUE 'N'.
+          88 VALIDE           VALUE 'O'.
+
+      * Variables SQL
+       01 WS-MAT-SQL          PIC X(6).
+       01 WS-NOM-SQL          PIC X(36).
+       01 WS-SVC-SQL          PIC X(4).
+       01 WS-SAL-SQL          PIC S9(8)V99.
+       01 WS-SAL-CHARGE-SQL   PIC S9(10)V99.
+
+       01 WS-LIGNE-REJET.
+           05 RJT-MATRICULE   PIC X(6).
+           05 FILLER          PIC X VALUE ' '.
+           05 RJT-NOM         PIC X(20).
+           05 FILLER          PIC X VALUE ' '.
+           05 RJT-CODE        PIC X(3).
+           05 FILLER          PIC X VALUE ' '.
+           05 RJT-MSG         PIC X(30).
+
+      * Fin de fichier
+       01 WS-FIN-FIC          PIC X VALUE 'N'.
+          88 FIC-TERMINE      VALUE 'O'.
+
+       PROCEDURE DIVISION.
+           PERFORM CONNEXION-DB.
+           PERFORM CHARGER-SERVICES.
+
+           OPEN INPUT  FIC-EMPLOYES.
+           OPEN OUTPUT FIC-REJET.
+
+           READ FIC-EMPLOYES
+               AT END SET FIC-TERMINE TO TRUE
+           END-READ.
+
+           PERFORM UNTIL FIC-TERMINE
+               PERFORM TRAITEMENT-EMPLOYE
+               READ FIC-EMPLOYES
+                   AT END SET FIC-TERMINE TO TRUE
+               END-READ
+           END-PERFORM.
+
+           EXEC SQL COMMIT END-EXEC.
+
+           CLOSE FIC-EMPLOYES.
+           CLOSE FIC-REJET.
+
+           DISPLAY '================================'.
+           DISPLAY '  BILAN ETL'.
+           DISPLAY '================================'.
+           DISPLAY 'Lus      : ' WS-NB-LUS.
+           DISPLAY 'Inseres  : ' WS-NB-INSERES.
+           DISPLAY 'Rejetes  : ' WS-NB-REJETES.
+           DISPLAY '  Voir FIC-REJET.txt pour details'.
+           DISPLAY '================================'.
+           STOP RUN.
+
+      *---------------------------------------------------------------
+       CONNEXION-DB.
+           EXEC SQL
+               CONNECT TO 'coboldb' USER 'cobol' USING 'cobol123'
+           END-EXEC.
+           IF SQLCODE NOT = 0
+               DISPLAY 'Erreur connexion : ' SQLCODE
+               STOP RUN
+           END-IF.
+
+      *---------------------------------------------------------------
+       CHARGER-SERVICES.
+           EXEC SQL DECLARE C-SVC CURSOR FOR
+               SELECT CODE, LIBELLE, BUDGET FROM SERVICES
+           END-EXEC.
+           EXEC SQL OPEN C-SVC END-EXEC.
+
+           PERFORM UNTIL SQLCODE = 100
+               EXEC SQL FETCH C-SVC
+                   INTO :WS-SVC-CODE(WS-IDX),
+                        :WS-SVC-LIB(WS-IDX),
+                        :WS-SVC-BUDGET(WS-IDX)
+               END-EXEC
+               IF SQLCODE = 0
+                   ADD 1 TO WS-NB-SERVICES
+                   SET WS-IDX UP BY 1
+               END-IF
+           END-PERFORM.
+           EXEC SQL CLOSE C-SVC END-EXEC.
+           DISPLAY WS-NB-SERVICES ' services charges en memoire.'.
+
+      *---------------------------------------------------------------
+       TRAITEMENT-EMPLOYE.
+           ADD 1 TO WS-NB-LUS.
+           MOVE 'O' TO WS-STATUT-VAL.
+           MOVE SPACES TO WS-CODE-REJET.
+
+           PERFORM VALIDER-EMPLOYE.
+
+           IF VALIDE
+               PERFORM INSERER-EN-BASE
+           ELSE
+               PERFORM ECRIRE-REJET
+           END-IF.
+
+      *---------------------------------------------------------------
+       VALIDER-EMPLOYE.
+           IF EMP-MATRICULE = SPACES
+               MOVE 'N' TO WS-STATUT-VAL
+               MOVE 'E01' TO WS-CODE-REJET
+           END-IF.
+           IF EMP-SALAIRE = 0
+               MOVE 'N' TO WS-STATUT-VAL
+               MOVE 'E02' TO WS-CODE-REJET
+           END-IF.
+
+      *---------------------------------------------------------------
+       INSERER-EN-BASE.
+           MOVE EMP-MATRICULE TO WS-MAT-SQL.
+           STRING EMP-PRENOM DELIMITED SPACE ' ' DELIMITED SIZE
+                  EMP-NOM    DELIMITED SPACE INTO WS-NOM-SQL.
+           MOVE EMP-SALAIRE TO WS-SAL-SQL.
+           COMPUTE WS-SAL-CHARGE-SQL = WS-SAL-SQL * 1.42.
+
+           EXEC SQL
+               INSERT INTO EMPLOYES_CHARGES
+                   (MATRICULE, NOM_COMPLET, SALAIRE_BRUT, SALAIRE_CHARGE)
+               VALUES
+                   (:WS-MAT-SQL, :WS-NOM-SQL,
+                    :WS-SAL-SQL, :WS-SAL-CHARGE-SQL)
+           END-EXEC.
+
+           IF SQLCODE = 0
+               ADD 1 TO WS-NB-INSERES
+           ELSE
+               MOVE 'E09' TO WS-CODE-REJET
+               PERFORM ECRIRE-REJET
+           END-IF.
+
+      *---------------------------------------------------------------
+       ECRIRE-REJET.
+           ADD 1 TO WS-NB-REJETES.
+           MOVE EMP-MATRICULE TO RJT-MATRICULE.
+           MOVE EMP-NOM       TO RJT-NOM.
+           MOVE WS-CODE-REJET TO RJT-CODE.
+           EVALUATE WS-CODE-REJET
+               WHEN 'E01' MOVE 'Matricule vide'     TO RJT-MSG
+               WHEN 'E02' MOVE 'Salaire nul'         TO RJT-MSG
+               WHEN 'E09' MOVE 'Erreur SQL insert'   TO RJT-MSG
+               WHEN OTHER MOVE 'Erreur inconnue'     TO RJT-MSG
+           END-EVALUATE.
+           MOVE WS-LIGNE-REJET TO ENR-REJET.
+           WRITE ENR-REJET.
